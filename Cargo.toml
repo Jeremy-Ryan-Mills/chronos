@@ -1,0 +1,17 @@
+[package]
+name = "chronos"
+version = "0.1.0"
+edition = "2024"
+
+[profile.dev]
+panic = "abort" # disable stack unwinding on panic
+
+[profile.release]
+panic = "abort" # disable stack unwinding on panic
+
+[[bin]]
+name = "chronos"
+test = false
+bench = false
+
+[dependencies]
