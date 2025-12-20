@@ -1,29 +1,58 @@
+//! VGA text-mode buffer driver.
+//!
+//! This module provides a safe(ish) abstraction for writing text to the VGA
+//! text buffer at memory address `0xb8000` in 80x25 text mode.
+//!
+//! It supports:
+//! - Colored text output
+//! - Line wrapping and scrolling
+//! - `print!` / `println!` macros similar to the Rust standard library
+//!
+//! All writes to VGA memory are performed using volatile accesses to ensure
+//! the compiler does not optimize them away.
 
 use volatile::Volatile;
 use core::fmt;
 use lazy_static::lazy_static;
 use spin::Mutex;
 
+/// Number of text rows in VGA text mode.
 const BUFFER_HEIGHT: usize = 25;
+
+/// Number of text columns in VGA text mode.
 const BUFFER_WIDTH: usize = 80;
 
+/// Prints formatted text to the VGA buffer without a trailing newline.
+///
+/// This macro behaves similarly to `std::print!`, but writes directly to the
+/// VGA text buffer instead of stdout.
 #[macro_export]
 macro_rules! print {
     ($($arg:tt)*) => ($crate::vga_buffer::_print(format_args!($($arg)*)));
 }
 
+/// Prints formatted text to the VGA buffer with a trailing newline.
+///
+/// This macro behaves similarly to `std::println!`.
 #[macro_export]
 macro_rules! println {
     () => ($crate::print!("\n"));
     ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
 }
 
+/// Internal print function used by the `print!` and `println!` macros.
+///
+/// This function acquires the global VGA writer lock and forwards the
+/// formatted output to it.
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {
     use core::fmt::Write;
     WRITER.lock().write_fmt(args).unwrap();
 }
 
+/// VGA color values.
+///
+/// These correspond to the standard VGA text-mode color palette.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -46,16 +75,24 @@ pub enum Color {
     White = 15,
 }
 
+/// A packed VGA color code combining foreground and background colors.
+///
+/// The lower 4 bits represent the foreground color, and the upper 4 bits
+/// represent the background color.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 struct ColorCode(u8);
 
 impl ColorCode {
+    /// Creates a new `ColorCode` from a foreground and background color.
     fn new(foreground: Color, background: Color) -> ColorCode {
         ColorCode((background as u8) << 4 | (foreground as u8))
     }
 }
 
+/// A single character in the VGA text buffer.
+///
+/// Each screen character consists of an ASCII byte and a color code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(C)]
 struct ScreenChar {
@@ -63,18 +100,35 @@ struct ScreenChar {
     color_code: ColorCode,
 }
 
+/// Representation of the VGA text buffer.
+///
+/// The buffer is a 2D array of `ScreenChar`s laid out exactly as expected
+/// by the VGA hardware.
 #[repr(transparent)]
 struct Buffer {
     chars: [[Volatile<ScreenChar>; BUFFER_WIDTH]; BUFFER_HEIGHT],
 }
 
+/// A writer type for the VGA text buffer.
+///
+/// Maintains the current cursor position and color state, and provides
+/// methods for writing bytes and strings to the screen.
 pub struct Writer {
+    /// Current column position on the last row.
     column_position: usize,
+
+    /// Current foreground/background color.
     color_code: ColorCode,
+
+    /// Reference to the VGA text buffer.
     buffer: &'static mut Buffer,
 }
 
 impl Writer {
+    /// Writes a single byte to the VGA buffer.
+    ///
+    /// Printable ASCII bytes are written directly. Newlines cause the screen
+    /// to scroll.
     pub fn write_byte(&mut self, byte: u8) {
         match byte {
             b'\n' => self.new_line(),
@@ -86,16 +140,16 @@ impl Writer {
                 let row = BUFFER_HEIGHT - 1;
                 let col = self.column_position;
 
-                let color_code = self.color_code;
                 self.buffer.chars[row][col].write(ScreenChar {
                     ascii_character: byte,
-                    color_code,
+                    color_code: self.color_code,
                 });
                 self.column_position += 1;
             }
         }
     }
 
+    /// Advances the buffer to a new line, scrolling the screen if necessary.
     fn new_line(&mut self) {
         for row in 1..BUFFER_HEIGHT {
             for col in 0..BUFFER_WIDTH {
@@ -107,6 +161,7 @@ impl Writer {
         self.column_position = 0;
     }
 
+    /// Clears a row by filling it with blank characters.
     fn clear_row(&mut self, row: usize) {
         let blank = ScreenChar {
             ascii_character: b' ',
@@ -119,20 +174,20 @@ impl Writer {
 }
 
 impl Writer {
+    /// Writes a string to the VGA buffer.
+    ///
+    /// Non-printable bytes are replaced with `0xfe`.
     pub fn write_string(&mut self, s: &str) {
         for byte in s.bytes() {
             match byte {
-                // printable ASCII byte or newline
                 0x20..=0x7e | b'\n' => self.write_byte(byte),
-                // not part of printable ASCII range
                 _ => self.write_byte(0xfe),
             }
-
         }
     }
 }
 
-
+/// Allows the VGA writer to be used with Rust’s formatting infrastructure.
 impl fmt::Write for Writer {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         self.write_string(s);
@@ -140,6 +195,14 @@ impl fmt::Write for Writer {
     }
 }
 
+/// Global VGA text buffer writer.
+///
+/// This is protected by a spinlock to allow safe concurrent access from
+/// different execution contexts (e.g. interrupts).
+///
+/// # Safety
+/// The memory address `0xb8000` must be mapped and correspond to a VGA
+/// text buffer in the current execution environment.
 lazy_static! {
     pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer {
         column_position: 0,
