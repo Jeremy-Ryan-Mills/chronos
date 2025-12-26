@@ -13,8 +13,6 @@ pub extern "C" fn _start() -> ! {
 
     chronos::init();
 
-    x86_64::instructions::interrupts::int3();
-
     // For testing
     #[cfg(test)]
     test_main();
