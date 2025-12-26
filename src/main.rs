@@ -11,9 +11,15 @@ use chronos::println;
 pub extern "C" fn _start() -> ! {
     println!("Hello World{}", "!");
 
+    chronos::init();
+
+    x86_64::instructions::interrupts::int3();
+
+    // For testing
     #[cfg(test)]
     test_main();
 
+    println!("It didnt crash yay");
     loop {}
 }
 
