@@ -18,7 +18,7 @@ pub extern "C" fn _start() -> ! {
     test_main();
 
     println!("It didnt crash yay");
-    loop {}
+    chronos::hlt_loop();
 }
 
 /// This function is called on panic.
@@ -26,7 +26,7 @@ pub extern "C" fn _start() -> ! {
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     println!("{}", info);
-    loop {}
+    chronos::hlt_loop();
 }
 
 /// This function is called on panic while testing.

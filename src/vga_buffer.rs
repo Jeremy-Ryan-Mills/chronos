@@ -47,7 +47,11 @@ macro_rules! println {
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {
     use core::fmt::Write;
-    WRITER.lock().write_fmt(args).unwrap();
+    use x86_64::instructions::interrupts;
+
+    interrupts::without_interrupts(|| {
+        WRITER.lock().write_fmt(args).unwrap();
+    });
 }
 
 /// VGA color values.
@@ -195,14 +199,14 @@ impl fmt::Write for Writer {
     }
 }
 
-/// Global VGA text buffer writer.
-///
-/// This is protected by a spinlock to allow safe concurrent access from
-/// different execution contexts (e.g. interrupts).
-///
-/// # Safety
-/// The memory address `0xb8000` must be mapped and correspond to a VGA
-/// text buffer in the current execution environment.
+// Global VGA text buffer writer.
+//
+// This is protected by a spinlock to allow safe concurrent access from
+// different execution contexts (e.g. interrupts).
+//
+// # Safety
+// The memory address `0xb8000` must be mapped and correspond to a VGA
+// text buffer in the current execution environment.
 lazy_static! {
     pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer {
         column_position: 0,
@@ -225,10 +229,16 @@ fn test_println_many() {
 
 #[test_case]
 fn test_println_output() {
+    use core::fmt::Write;
+    use x86_64::instructions::interrupts;
+
     let s = "Some test string that fits on a single line";
-    println!("{}", s);
-    for (i, c) in s.chars().enumerate() {
-        let screen_char = WRITER.lock().buffer.chars[BUFFER_HEIGHT - 2][i].read();
-        assert_eq!(char::from(screen_char.ascii_character), c);
-    }
+    interrupts::without_interrupts(|| {
+        let mut writer = WRITER.lock();
+        writeln!(writer, "\n{}", s).expect("writeln failed");
+        for (i, c) in s.chars().enumerate() {
+            let screen_char = writer.buffer.chars[BUFFER_HEIGHT - 2][i].read();
+            assert_eq!(char::from(screen_char.ascii_character), c);
+        }
+    });
 }
