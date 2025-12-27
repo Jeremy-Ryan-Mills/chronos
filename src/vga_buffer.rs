@@ -11,10 +11,10 @@
 //! All writes to VGA memory are performed using volatile accesses to ensure
 //! the compiler does not optimize them away.
 
-use volatile::Volatile;
 use core::fmt;
 use lazy_static::lazy_static;
 use spin::Mutex;
+use volatile::Volatile;
 
 /// Number of text rows in VGA text mode.
 const BUFFER_HEIGHT: usize = 25;
@@ -210,7 +210,6 @@ lazy_static! {
         buffer: unsafe { &mut *(0xb8000 as *mut Buffer) },
     });
 }
-
 
 #[test_case]
 fn test_println_simple() {
