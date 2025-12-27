@@ -12,12 +12,19 @@
 #![test_runner(crate::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
+#[cfg(test)]
+use bootloader::{entry_point, BootInfo};
+
 use core::panic::PanicInfo;
 
 pub mod gdt;
 pub mod interrupts;
 pub mod serial;
 pub mod vga_buffer;
+pub mod memory;
+
+#[cfg(test)]
+entry_point!(test_kernel_main);
 
 /// Trait implemented by things that can be run as tests.
 ///
@@ -81,6 +88,7 @@ pub fn init() {
     x86_64::instructions::interrupts::enable();
 }
 
+
 /// Custom test runner used by the `custom_test_frameworks` feature.
 ///
 /// Prints test count, executes tests, then exits QEMU with a success code.
@@ -103,14 +111,9 @@ pub fn test_panic_handler(info: &PanicInfo) -> ! {
     hlt_loop();
 }
 
-/// Entry point for `cargo test`.
-///
-/// When testing, we provide our own `_start` instead of using the normal Rust
-/// runtime. This initializes the kernel, runs the generated test harness, and
-/// then halts forever.
 #[cfg(test)]
-#[unsafe(no_mangle)]
-pub extern "C" fn _start() -> ! {
+fn test_kernel_main(_boot_info: &'static BootInfo) -> ! {
+    // like before
     init();
     test_main();
     hlt_loop();

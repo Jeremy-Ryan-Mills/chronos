@@ -6,13 +6,14 @@
 //! IDT vector indices.
 
 use lazy_static::lazy_static;
-use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame};
+use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 use pic8259::ChainedPics;
 use spin;
 
 use crate::gdt;
 use crate::println;
 use crate::print;
+use crate::hlt_loop;
 
 /// Offset where PIC1 vectors start in the IDT.
 ///
@@ -45,6 +46,9 @@ lazy_static! {
 
         // CPU exceptions
         idt.breakpoint.set_handler_fn(breakpoint_handler);
+
+        // Page faults
+        idt.page_fault.set_handler_fn(page_fault_handler);
 
         // Double fault: use a known-good stack (IST) so stack overflows don't
         // immediately cascade into triple faults / resets.
@@ -163,6 +167,19 @@ extern "x86-interrupt" fn breakpoint_handler(
     stack_frame: InterruptStackFrame)
 {
     println!("EXCEPTION: BREAKPOINT\n{:#?}", stack_frame);
+}
+
+extern "x86-interrupt" fn page_fault_handler(
+    stack_frame: InterruptStackFrame,
+    error_code: PageFaultErrorCode,
+) {
+    use x86_64::registers::control::Cr2;
+
+    println!("EXCEPTION: PAGE FAULT");
+    println!("Accessed Address: {:?}", Cr2::read());
+    println!("Error Code: {:?}", error_code);
+    println!("{:#?}", stack_frame);
+    hlt_loop();
 }
 
 /// Double fault handler.
