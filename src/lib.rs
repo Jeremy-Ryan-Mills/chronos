@@ -15,6 +15,7 @@
 #[cfg(test)]
 use bootloader::{entry_point, BootInfo};
 
+extern crate alloc;
 use core::panic::PanicInfo;
 
 pub mod gdt;
@@ -22,6 +23,7 @@ pub mod interrupts;
 pub mod serial;
 pub mod vga_buffer;
 pub mod memory;
+pub mod allocator;
 
 #[cfg(test)]
 entry_point!(test_kernel_main);
